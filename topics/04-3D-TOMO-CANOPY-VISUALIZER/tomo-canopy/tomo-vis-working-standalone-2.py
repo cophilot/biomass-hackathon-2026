@@ -125,65 +125,6 @@ def bin_scale(volume, quantile):
     return np.where(np.isfinite(scale) & (scale > 0), scale, np.nan)
 
 
-def normalize_vertical_bins(volume, quantile):
-    """Divide each voxel by the given quantile of the voxels in its height bin.
-
-    A high quantile (e.g. P95) instead of the max keeps a few bright outliers
-    from setting the scale of the whole bin.
-    """
-    return volume / bin_scale(volume, quantile)[:, None, None]
-
-
-# Data behind the scattering-height metrics (initial toggle state).
-metric_values = (
-    normalize_vertical_bins(values, CFG.bin_normalization_quantile)
-    if CFG.normalize_bins else values
-)
-
-total = np.nansum(metric_values, axis=0)
-valid = np.isfinite(metric_values).any(axis=0) & (total > 0)
-profile = np.divide(
-    metric_values, total[None, ...],
-    out=np.full_like(metric_values, np.nan), where=valid[None, ...],
-)
-cdf = np.cumsum(np.nan_to_num(profile, nan=0.0), axis=0)
-
-
-def scattering_height(quantile):
-    index = np.argmax(cdf >= quantile, axis=0)
-    result = z[index].astype(float)
-    result[~valid] = np.nan
-    return result
-
-
-sh50 = scattering_height(CFG.sh_median_quantile)
-sh90 = scattering_height(CFG.sh_upper_quantile)
-
-centroid = np.nansum(profile * z[:, None, None], axis=0)
-centroid[~valid] = np.nan
-
-log_profile = np.zeros_like(profile)
-np.log(profile, out=log_profile, where=profile > 0)
-entropy = -np.nansum(profile * log_profile, axis=0) / np.log(len(z))
-entropy[~valid] = np.nan
-
-
-def band_fraction(lo=None, hi=None):
-    """Fraction of column power between lo (inclusive) and hi (exclusive)."""
-    mask = np.ones_like(z, dtype=bool)
-    if lo is not None:
-        mask &= z >= lo
-    if hi is not None:
-        mask &= z < hi
-    return np.nansum(profile[mask], axis=0)
-
-
-lower_fraction = band_fraction(*CFG.lower_band)
-middle_fraction = band_fraction(*CFG.middle_band)
-upper_fraction = band_fraction(lo=CFG.upper_band_min)
-print(window, np.nanmin(sh90), np.nanmax(sh90))
-
-
 # --------------------------------------------------------------------------- #
 # Convert coordinates to metres
 # --------------------------------------------------------------------------- #
